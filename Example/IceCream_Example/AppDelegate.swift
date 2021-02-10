@@ -9,6 +9,7 @@
 import UIKit
 import IceCream
 import CloudKit
+import RealmSwift
 
 @UIApplicationMain
 class AppDelegate: UIResponder, UIApplicationDelegate {
@@ -19,11 +20,11 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
     func application(_ application: UIApplication, didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?) -> Bool {
         
         syncEngine = SyncEngine(objects: [
-            SyncObject<Person>(),
-            SyncObject<Dog>(),
-            SyncObject<Cat>()
+            SyncObject(type: Dog.self),
+            SyncObject(type: Cat.self),
+            SyncObject(type: Person.self, uListElementType: Cat.self)
             ])
-      
+        
         /// If you wanna test public Database, comment the above syncEngine code and uncomment the following one
         /// Besides, uncomment Line 26 to 28 in Person.swift file
 //        syncEngine = SyncEngine(objects: [SyncObject<Person>()], databaseScope: .public)

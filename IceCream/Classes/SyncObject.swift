@@ -15,7 +15,7 @@ import CloudKit
 /// 2. it detects the changeSets of Realm Database and directly talks to it.
 /// 3. it hands over to SyncEngine so that it can talk to CloudKit.
 
-public final class SyncObject<T> where T: Object & CKRecordConvertible & CKRecordRecoverable {
+public final class SyncObject<T, U, V, W> where T: Object & CKRecordConvertible & CKRecordRecoverable, U: Object, V: Object, W: Object {
     
     /// Notifications are delivered as long as a reference is held to the returned notification token. We should keep a strong reference to this token on the class registering for updates, as notifications are automatically unregistered when the notification token is deallocated.
     /// For more, reference is here: https://realm.io/docs/swift/latest/#notifications
@@ -25,9 +25,20 @@ public final class SyncObject<T> where T: Object & CKRecordConvertible & CKRecor
     
     public let realmConfiguration: Realm.Configuration
     
-    public init(realmConfiguration: Realm.Configuration = Realm.Configuration.defaultConfiguration) {
+    private let pendingUTypeRelationshipsWorker = PendingRelationshipsWorker<U>()
+    private let pendingVTypeRelationshipsWorker = PendingRelationshipsWorker<V>()
+    private let pendingWTypeRelationshipsWorker = PendingRelationshipsWorker<W>()
+    
+    public init(
+        realmConfiguration: Realm.Configuration = .defaultConfiguration,
+        type: T.Type,
+        uListElementType: U.Type? = nil,
+        vListElementType: V.Type? = nil,
+        wListElementType: W.Type? = nil
+    ) {
         self.realmConfiguration = realmConfiguration
     }
+    
 }
 
 // MARK: - Zone information
@@ -72,10 +83,26 @@ extension SyncObject: Syncable {
     public func add(record: CKRecord) {
         BackgroundWorker.shared.start {
             let realm = try! Realm(configuration: self.realmConfiguration)
-            guard let object = T.parseFromRecord(record: record, realm: realm) else {
+            guard let object = T.parseFromRecord(
+                record: record,
+                realm: realm,
+                notificationToken: self.notificationToken,
+                pendingUTypeRelationshipsWorker: self.pendingUTypeRelationshipsWorker,
+                pendingVTypeRelationshipsWorker: self.pendingVTypeRelationshipsWorker,
+                pendingWTypeRelationshipsWorker: self.pendingWTypeRelationshipsWorker
+            ) else {
                 print("There is something wrong with the converson from cloud record to local object")
                 return
             }
+            
+            self.pendingUTypeRelationshipsWorker.owner = object
+            self.pendingUTypeRelationshipsWorker.realm = realm
+            
+            self.pendingVTypeRelationshipsWorker.owner = object
+            self.pendingVTypeRelationshipsWorker.realm = realm
+            
+            self.pendingWTypeRelationshipsWorker.owner = object
+            self.pendingWTypeRelationshipsWorker.realm = realm
             
             /// If your model class includes a primary key, you can have Realm intelligently update or add objects based off of their primary key values using Realm().add(_:update:).
             /// https://realm.io/docs/swift/latest/#objects-with-primary-keys
@@ -128,6 +155,12 @@ extension SyncObject: Syncable {
                 }
             })
         }
+    }
+    
+    public func resolvePendingRelationships() {
+        pendingUTypeRelationshipsWorker.resolvePendingListElements()
+        pendingVTypeRelationshipsWorker.resolvePendingListElements()
+        pendingWTypeRelationshipsWorker.resolvePendingListElements()
     }
     
     public func cleanUp() {

@@ -13,7 +13,14 @@ public protocol CKRecordRecoverable {
 }
 
 extension CKRecordRecoverable where Self: Object {
-    static func parseFromRecord(record: CKRecord, realm: Realm) -> Self? {
+    static func parseFromRecord<U: Object, V: Object, W: Object>(
+        record: CKRecord,
+        realm: Realm,
+        notificationToken: NotificationToken?,
+        pendingUTypeRelationshipsWorker: PendingRelationshipsWorker<U>,
+        pendingVTypeRelationshipsWorker: PendingRelationshipsWorker<V>,
+        pendingWTypeRelationshipsWorker: PendingRelationshipsWorker<W>
+    ) -> Self? {
         let o = Self()
         for prop in o.objectSchema.properties {
             var recordValue: Any?
@@ -55,6 +62,56 @@ extension CKRecordRecoverable where Self: Object {
                     let list = List<Date>()
                     list.append(objectsIn: value)
                     recordValue = list
+                case .object:
+                    guard let value = record.value(forKey: prop.name) as? [CKRecord.Reference] else { break }
+                    
+                    let uList = List<U>()
+                    let vList = List<V>()
+                    let wList = List<W>()
+                    
+                    for reference in value {
+                        if let objectClassName = prop.objectClassName,
+                           let schema = realm.schema.objectSchema.first(where: { $0.className == objectClassName }),
+                           let primaryKeyValue = primaryKeyForRecordID(recordID: reference.recordID, schema: schema) {
+                            if schema.className == U.className() {
+                                if let existObject = realm.object(ofType: U.self, forPrimaryKey: primaryKeyValue) {
+                                    uList.append(existObject)
+                                } else {
+                                    pendingUTypeRelationshipsWorker.addToPendingListElement(propertyName: prop.name, primaryKeyValue: primaryKeyValue)
+                                }
+                            }
+                            
+                            if schema.className == V.className() {
+                                if let existObject = realm.object(ofType: V.self, forPrimaryKey: primaryKeyValue) {
+                                    vList.append(existObject)
+                                } else {
+                                    pendingVTypeRelationshipsWorker.addToPendingListElement(propertyName: prop.name, primaryKeyValue: primaryKeyValue)
+                                }
+                            }
+                            
+                            if schema.className == W.className() {
+                                if let existObject = realm.object(ofType: W.self, forPrimaryKey: primaryKeyValue) {
+                                    wList.append(existObject)
+                                } else {
+                                    pendingWTypeRelationshipsWorker.addToPendingListElement(propertyName: prop.name, primaryKeyValue: primaryKeyValue)
+                                }
+                            }
+                            
+                        }
+                    }
+                    
+                    if prop.objectClassName == U.className() {
+                        recordValue = uList
+                    }
+                    
+                    if prop.objectClassName == V.className() {
+                        recordValue = vList
+                    }
+                    
+                    if prop.objectClassName == W.className() {
+                        recordValue = wList
+                    }
+                    
                 default:
                     break
                 }
